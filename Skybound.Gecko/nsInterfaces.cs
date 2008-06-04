@@ -41,7 +41,7 @@ using System.Runtime.CompilerServices;
 namespace Skybound.Gecko
 {
 	[Guid("00000000-0000-0000-c000-000000000046"), ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-	interface nsISupports
+	public interface nsISupports
 	{
 		object QueryInterface(ref Guid iid);
 		int AddRef();
@@ -229,7 +229,7 @@ namespace Skybound.Gecko
 		void GoBack();
 		void GoForward();
 		void GotoIndex(int index);
-		[PreserveSig] int LoadURI([MarshalAs(UnmanagedType.LPWStr)] string aURI, uint aLoadFlags, nsIURI aReferrer, IntPtr /*nsIInputStream*/ aPostData, IntPtr /*nsIInputStream*/ aHeaders);
+		[PreserveSig] int LoadURI([MarshalAs(UnmanagedType.LPWStr)] string aURI, uint aLoadFlags, nsIURI aReferrer, nsIInputStream aPostData, nsIInputStream aHeaders);
 		void Reload(uint aReloadFlags);
 		void Stop(uint aStopFlags);
 		nsIDOMDocument GetDocument();
@@ -257,7 +257,7 @@ namespace Skybound.Gecko
 	interface nsIHistoryEntry
 	{
 		nsIURI GetURI();
-		[return: MarshalAs(UnmanagedType.LPWStr)] string GetTitle();
+		[PreserveSig] int GetTitle(out IntPtr aTitle);
 		bool GetIsSubFrame();
 	}
 	
@@ -354,7 +354,7 @@ namespace Skybound.Gecko
 	}
 	
 	[Guid("033a1470-8b2a-11d3-af88-00a024ffc08c"), ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-	interface nsIInterfaceRequestor
+	public interface nsIInterfaceRequestor
 	{
 		IntPtr GetInterface(ref Guid uuid);
 	}
@@ -1323,9 +1323,9 @@ namespace Skybound.Gecko
 	interface nsIPromptService
 	{
 		void Alert(nsIDOMWindow aParent, [MarshalAs(UnmanagedType.LPWStr)] string aDialogTitle, [MarshalAs(UnmanagedType.LPWStr)] string aText);
-		[PreserveSig] void AlertCheck(nsIDOMWindow aParent, [MarshalAs(UnmanagedType.LPWStr)] string aDialogTitle, [MarshalAs(UnmanagedType.LPWStr)] string aText, [MarshalAs(UnmanagedType.LPWStr)] string aCheckMsg, out bool aCheckState);
+		[PreserveSig] void AlertCheck(nsIDOMWindow aParent, [MarshalAs(UnmanagedType.LPWStr)] string aDialogTitle, [MarshalAs(UnmanagedType.LPWStr)] string aText, [MarshalAs(UnmanagedType.LPWStr)] string aCheckMsg, ref bool aCheckState);
 		bool Confirm(nsIDOMWindow aParent, [MarshalAs(UnmanagedType.LPWStr)] string aDialogTitle, [MarshalAs(UnmanagedType.LPWStr)] string aText);
-		bool ConfirmCheck(nsIDOMWindow aParent, [MarshalAs(UnmanagedType.LPWStr)] string aDialogTitle, [MarshalAs(UnmanagedType.LPWStr)] string aText, [MarshalAs(UnmanagedType.LPWStr)] string aCheckMsg, out bool aCheckState);
+		[PreserveSig] bool ConfirmCheck(nsIDOMWindow aParent, [MarshalAs(UnmanagedType.LPWStr)] string aDialogTitle, [MarshalAs(UnmanagedType.LPWStr)] string aText, [MarshalAs(UnmanagedType.LPWStr)] string aCheckMsg, ref bool aCheckState);
 		int ConfirmEx(nsIDOMWindow aParent, [MarshalAs(UnmanagedType.LPWStr)] string aDialogTitle, [MarshalAs(UnmanagedType.LPWStr)] string aText, uint aButtonFlags, [MarshalAs(UnmanagedType.LPWStr)] string aButton0Title, [MarshalAs(UnmanagedType.LPWStr)] string aButton1Title, [MarshalAs(UnmanagedType.LPWStr)] string aButton2Title, [MarshalAs(UnmanagedType.LPWStr)] string aCheckMsg, out bool aCheckState);
 		bool Prompt(nsIDOMWindow aParent, [MarshalAs(UnmanagedType.LPWStr)] string aDialogTitle, [MarshalAs(UnmanagedType.LPWStr)] string aText, [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef=typeof(PRUnicharMarshaler))] ref string aValue, [MarshalAs(UnmanagedType.LPWStr)] string aCheckMsg, bool [] aCheckState);
 		bool PromptUsernameAndPassword(nsIDOMWindow aParent, [MarshalAs(UnmanagedType.LPWStr)] string aDialogTitle, [MarshalAs(UnmanagedType.LPWStr)] string aText, [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef=typeof(PRUnicharMarshaler))] ref string aUsername, [MarshalAs(UnmanagedType.CustomMarshaler, MarshalTypeRef=typeof(PRUnicharMarshaler))] ref string aPassword, [MarshalAs(UnmanagedType.LPWStr)] string aCheckMsg, bool [] aCheckState);
@@ -1364,7 +1364,7 @@ namespace Skybound.Gecko
 	}
 	
 	[Guid("00000001-0000-0000-c000-000000000046"), ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-	interface nsIFactory
+	public interface nsIFactory
 	{
 		void CreateInstance(nsISupports aOuter, ref Guid iid, [MarshalAs(UnmanagedType.IUnknown)] out object result);
 		void LockFactory(bool @lock);
@@ -1387,10 +1387,28 @@ namespace Skybound.Gecko
 		[PreserveSig] void ContractIDToCID([MarshalAs(UnmanagedType.LPStr)] string aContractID, out Guid cid);
 	}
 	
+	[Guid("57a66a60-d43a-11d3-8cc2-00609792278c"), ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+	interface nsIDirectoryService
+	{
+		void Init();
+		void RegisterProvider(nsIDirectoryServiceProvider provider);
+		void UnregisterProvider(nsIDirectoryServiceProvider provider);
+	}
+	
 	[Guid("bbf8cab0-d43a-11d3-8cc2-00609792278c"), ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 	interface nsIDirectoryServiceProvider
 	{
 		nsIFile GetFile([MarshalAs(UnmanagedType.LPStr)] string prop, out bool persistent);
+	}
+	
+	[Guid("78650582-4e93-4b60-8e85-26ebd3eb14ca"), ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+	interface nsIProperties
+	{
+		IntPtr Get([MarshalAs(UnmanagedType.LPStr)] string prop, ref Guid iid);
+		void Set([MarshalAs(UnmanagedType.LPStr)] string prop, nsISupports value);
+		bool Has([MarshalAs(UnmanagedType.LPStr)] string prop);
+		void Undefine([MarshalAs(UnmanagedType.LPStr)] string prop);
+		void STUB_GetKeys();
 	}
 	
 	[Guid("c8c0a080-0868-11d3-915f-d9d889d48e3c"), ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -1515,4 +1533,96 @@ namespace Skybound.Gecko
 		void GetRelativeDescriptor(nsILocalFile fromFile, nsACString _retval);
 		void SetRelativeDescriptor(nsILocalFile fromFile, nsACString relativeDesc);
 	}
+	
+	[Guid("bddeda3f-9020-4d12-8c70-984ee9f7935e"), ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+	interface nsIIOService
+	{
+		IntPtr GetProtocolHandler([MarshalAs(UnmanagedType.LPStr)] string aScheme); // nsIProtocolHandler
+		uint GetProtocolFlags([MarshalAs(UnmanagedType.LPStr)] string aScheme);
+		nsIURI NewURI(nsACString aSpec, [MarshalAs(UnmanagedType.LPStr)] string aOriginCharset, nsIURI aBaseURI);
+		nsIURI NewFileURI(nsIFile aFile);
+		IntPtr NewChannelFromURI(nsIURI aURI); // returns: nsIChannel
+		IntPtr NewChannel(nsACString aSpec, [MarshalAs(UnmanagedType.LPStr)] string aOriginCharset, nsIURI aBaseURI); // returns: nsIChannel
+		bool GetOffline();
+		void SetOffline(bool aOffline);
+		bool AllowPort(int aPort, [MarshalAs(UnmanagedType.LPStr)] string aScheme);
+		void ExtractScheme(nsACString urlString, nsACString _retval);
+	}
+	
+	[Guid("b8100c90-73be-11d2-92a5-00105a1b0d64"), ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+	interface nsIClipboardCommands
+	{
+		[PreserveSig] int CanCutSelection(out bool result);
+		[PreserveSig] int CanCopySelection(out bool result);
+		[PreserveSig] int CanCopyLinkLocation(out bool result);
+		[PreserveSig] int CanCopyImageLocation(out bool result);
+		[PreserveSig] int CanCopyImageContents(out bool result);
+		[PreserveSig] int CanPaste(out bool result);
+		void CutSelection();
+		void CopySelection();
+		void CopyLinkLocation();
+		void CopyImageLocation();
+		void CopyImageContents();
+		void Paste();
+		void SelectAll();
+		void SelectNone();
+	}
+	
+	[Guid("080d2001-f91e-11d4-a73c-f9242928207c"), ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+	interface nsICommandManager
+	{
+		void AddCommandObserver(nsIObserver aCommandObserver, [MarshalAs(UnmanagedType.LPStr)] string aCommandToObserve);
+		void RemoveCommandObserver(nsIObserver aCommandObserver, [MarshalAs(UnmanagedType.LPStr)] string aCommandObserved);
+		bool IsCommandSupported([MarshalAs(UnmanagedType.LPStr)] string aCommandName, nsIDOMWindow aTargetWindow);
+		bool IsCommandEnabled([MarshalAs(UnmanagedType.LPStr)] string aCommandName, nsIDOMWindow aTargetWindow);
+		void GetCommandState([MarshalAs(UnmanagedType.LPStr)] string aCommandName, nsIDOMWindow aTargetWindow, nsICommandParams aCommandParams);
+		void DoCommand([MarshalAs(UnmanagedType.LPStr)] string aCommandName, nsICommandParams aCommandParams, nsIDOMWindow aTargetWindow);
+	}
+	
+	[Guid("83f892cf-7ed3-490e-967a-62640f3158e1"), ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+	interface nsICommandParams
+	{
+		short GetValueType([MarshalAs(UnmanagedType.LPStr)] string name);
+		bool GetBooleanValue([MarshalAs(UnmanagedType.LPStr)] string name);
+		int GetLongValue([MarshalAs(UnmanagedType.LPStr)] string name);
+		double GetDoubleValue([MarshalAs(UnmanagedType.LPStr)] string name);
+		void GetStringValue([MarshalAs(UnmanagedType.LPStr)] string name, nsAString _retval);
+		[return: MarshalAs(UnmanagedType.LPStr)] string GetCStringValue([MarshalAs(UnmanagedType.LPStr)] string name);
+		nsISupports GetISupportsValue([MarshalAs(UnmanagedType.LPStr)] string name);
+		void SetBooleanValue([MarshalAs(UnmanagedType.LPStr)] string name, bool value);
+		void SetLongValue([MarshalAs(UnmanagedType.LPStr)] string name, int value);
+		void SetDoubleValue([MarshalAs(UnmanagedType.LPStr)] string name, double value);
+		void SetStringValue([MarshalAs(UnmanagedType.LPStr)] string name, nsAString value);
+		void SetCStringValue([MarshalAs(UnmanagedType.LPStr)] string name, [MarshalAs(UnmanagedType.LPStr)] string value);
+		void SetISupportsValue([MarshalAs(UnmanagedType.LPStr)] string name, nsISupports value);
+		void RemoveValue([MarshalAs(UnmanagedType.LPStr)] string name);
+		bool HasMoreElements();
+		void First();
+		[return: MarshalAs(UnmanagedType.LPStr)] string GetNext();
+	}
+	
+	[Guid("44b78386-1dd2-11b2-9ad2-e4eee2ca1916"), ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+	interface nsITooltipListener
+	{
+		void OnShowTooltip(int aXCoords, int aYCoords, [MarshalAs(UnmanagedType.LPWStr)] string aTipText);
+		void OnHideTooltip();
+	}
+	
+	[Guid("fa9c7f6c-61b3-11d4-9877-00c04fa0cf4a"), ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+	interface nsIInputStream
+	{
+		void Close();
+		int Available();
+		int Read(IntPtr aBuf, uint aCount);
+		int ReadSegments(IntPtr aWriter, IntPtr aClosure, uint aCount);
+		bool IsNonBlocking();
+	}
+	
+	delegate int nsWriteSegmentFun(nsIInputStream aInStream, IntPtr aClosure, IntPtr aFromSegment, int aToOffset, int aCount, out int aWriteCount);
+	
+	//[Guid("b128a1e6-44f3-4331-8fbe-5af360ff21ee"), ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+	//interface nsITooltipTextProvider
+	//{
+	//      bool GetNodeText(nsIDOMNode aNode, [MarshalAs(UnmanagedType.LPWStr)] out string aText);
+	//}
 }

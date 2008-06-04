@@ -55,6 +55,7 @@
     <Compile Include="GeckoDom.cs" />
     <Compile Include="GeckoDomEvents.cs" />
     <Compile Include="GeckoHistoryEntry.cs" />
+    <Compile Include="GeckoResponse.cs" />
     <Compile Include="GeckoStyle.cs" />
     <Compile Include="GeckoWebBrowser.cs">
       <SubType>Component</SubType>
@@ -76,7 +77,7 @@
     </Compile>
     <Compile Include="PromptService.cs" />
     <Compile Include="PropertiesDialog.cs">
-      <SubType>Form</SubType>
+      <SubType>Component</SubType>
     </Compile>
     <Compile Include="PropertiesDialog.Designer.cs">
       <DependentUpon>PropertiesDialog.cs</DependentUpon>

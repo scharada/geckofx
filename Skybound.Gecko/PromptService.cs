@@ -67,11 +67,11 @@ namespace Skybound.Gecko
 	{
 		public void Alert(nsIDOMWindow aParent, string aDialogTitle, string aText)
 		{
-			bool checkState;
-			AlertCheck(aParent, aDialogTitle, aText, null, out checkState);
+			bool checkState = false;
+			AlertCheck(aParent, aDialogTitle, aText, null, ref checkState);
 		}
 
-		public void AlertCheck(nsIDOMWindow aParent, string aDialogTitle, string aText, string aCheckMsg, out bool aCheckState)
+		public void AlertCheck(nsIDOMWindow aParent, string aDialogTitle, string aText, string aCheckMsg, ref bool aCheckState)
 		{
 			ConfirmDialog dialog = new ConfirmDialog(aText, aDialogTitle, "OK", null, null, aCheckMsg);
 			
@@ -82,11 +82,11 @@ namespace Skybound.Gecko
 
 		public bool Confirm(nsIDOMWindow aParent, string aDialogTitle, string aText)
 		{
-			bool checkState;
-			return ConfirmCheck(aParent, aDialogTitle, aText, null, out checkState);
+			bool checkState = false;
+			return ConfirmCheck(aParent, aDialogTitle, aText, null, ref checkState);
 		}
 
-		public bool ConfirmCheck(nsIDOMWindow aParent, string aDialogTitle, string aText, string aCheckMsg, out bool aCheckState)
+		public bool ConfirmCheck(nsIDOMWindow aParent, string aDialogTitle, string aText, string aCheckMsg, ref bool aCheckState)
 		{
 			ConfirmDialog dialog = new ConfirmDialog(aText, aDialogTitle, "OK", "Cancel", null, aCheckMsg);
 
@@ -194,8 +194,8 @@ namespace Skybound.Gecko
 		
 		public void ShowNonBlockingAlert(nsIDOMWindow aParent, string aDialogTitle, string aText)
 		{
-			ConfirmDialog dialog = new ConfirmDialog(aText, aDialogTitle, "OK", null, null, null);
-			dialog.Show();
+		      ConfirmDialog dialog = new ConfirmDialog(aText, aDialogTitle, "OK", null, null, null);
+		      dialog.Show();
 		}
 	}
 }

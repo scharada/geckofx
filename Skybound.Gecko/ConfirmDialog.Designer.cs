@@ -154,6 +154,7 @@ namespace Skybound.Gecko
 			this.Controls.Add(this.panel1);
 			this.Controls.Add(this.label);
 			this.Controls.Add(this.pictureBox);
+			this.FormBorderStyle = FormBorderStyle.Sizable;
 			this.MaximizeBox = false;
 			this.MinimizeBox = false;
 			this.Name = "ConfirmDialog";

@@ -36,6 +36,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Drawing;
 
 namespace Skybound.Gecko
 {
@@ -192,9 +193,6 @@ namespace Skybound.Gecko
 		internal GeckoAttribute(nsIDOMAttr attr) : base(attr)
 		{
 			this.DomAttr = attr;
-			
-			// since a reference is stored in the base class, we only need a weak reference here
-			Marshal.ChangeWrapperHandleStrength(attr, true);
 		}
 		nsIDOMAttr DomAttr;
 		
@@ -248,7 +246,6 @@ namespace Skybound.Gecko
 			this.DomNSElement = (nsIDOMNSHTMLElement)element;
 			
 			// since a reference is stored in the base class, we only need a weak reference here
-			Marshal.ChangeWrapperHandleStrength(DomElement, true);
 			Marshal.ChangeWrapperHandleStrength(DomNSElement, true);
 		}
 		
@@ -329,6 +326,26 @@ namespace Skybound.Gecko
 		}
 		
 		/// <summary>
+		/// Gets the value of an attribute on this element with the specified name and namespace.
+		/// </summary>
+		/// <param name="attributeName"></param>
+		/// <returns></returns>
+		public string GetAttributeNS(string namespaceUri, string attributeName)
+		{
+			if (string.IsNullOrEmpty(namespaceUri))
+				return GetAttribute(attributeName);
+			
+			if (string.IsNullOrEmpty(attributeName))
+				throw new ArgumentException("attributeName");
+			
+			using (nsAString retval = new nsAString())
+			{
+				DomElement.GetAttributeNS(new nsAString(namespaceUri), new nsAString(attributeName), retval);
+				return retval.ToString();
+			}
+		}
+		
+		/// <summary>
 		/// Sets the value of an attribute on this element with the specified name.
 		/// </summary>
 		/// <param name="attributeName"></param>
@@ -339,6 +356,26 @@ namespace Skybound.Gecko
 				throw new ArgumentException("attributeName");
 			
 			DomElement.SetAttribute(new nsAString(attributeName), new nsAString(value));
+		}
+		
+		/// <summary>
+		/// Sets the value of an attribute on this element with the specified name and namespace.
+		/// </summary>
+		/// <param name="attributeName"></param>
+		/// <param name="value"></param>
+		public void SetAttributeNS(string namespaceUri, string attributeName, string value)
+		{
+			if (string.IsNullOrEmpty(namespaceUri))
+			{
+				SetAttribute(attributeName, value);
+			}
+			else
+			{
+				if (string.IsNullOrEmpty(attributeName))
+					throw new ArgumentException("attributeName");
+				
+				DomElement.SetAttributeNS(new nsAString(namespaceUri), new nsAString(attributeName), new nsAString(value));
+			}
 		}
 		
 		/// <summary>
@@ -405,9 +442,6 @@ namespace Skybound.Gecko
 		internal GeckoDocument(nsIDOMHTMLDocument document) : base(document)
 		{
 			this.DomDocument = document;
-			
-			// since a reference is stored in the base class, we only need a weak reference here
-			Marshal.ChangeWrapperHandleStrength(DomDocument, true);
 		}
 		
 		internal static GeckoDocument Create(nsIDOMHTMLDocument document)
