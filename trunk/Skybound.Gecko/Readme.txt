@@ -25,6 +25,8 @@ Then, in your application startup code, call:
 where "xulrunnerPath" is the full path to the location where you extracted the "xulrunner" directory
 (containing xul.dll, xpcom.dll, etc).
 
+OPTIONAL: Specify a profile directory by setting Xpcom.ProfileDirectory.
+
 NOTE: There are some files included with XULRunner which GeckoFX doesn't need.  You may
 safely delete them:
 
@@ -39,11 +41,21 @@ java*.*
 
 Known Bugs
 ----------
-- The mozilla "Personal Security Manager" is causing the control to crash when "https" links are used and
-when any form is submitted.  As a safeguard, you can disable the PSM by removing "pipnss.dll" and "popnss.xpt"
-from the XULRunner "components" directory.
-- The CreateWindow event is never fired because it's not working correctly at the moment.
-- The right-click menu is a little bit bare.
+- The right-click menu is still missing some standard features like cut, paste.
+
+Changes in 1.8.1.4
+------------------
+- HTTPS is now supported.  Remember that if you disabled the PSM by removing "pipnss.dll" and "pipnss.xpt" from
+your XULRunner "components" directory, you need to put those files back now to support HTTPS.
+- Displaying an alert or navigating to an invalid page when the browser control was first loaded would cause it to crash
+- Confirm dialog can't be resized any more
+- Added a Response property to the Navigated event to get additional information about the HTTP response
+- CreateWindow event works properly; handle it to allow javascript code to open new windows.  Also handle the
+WindowSetBounds event to update and set the position & size of the new window.
+- Added Cut, Copy, Paste, Undo, Redo methods to WebBrowser, plus CanCut, CanCopy etc.  Also added many of these to the context menu.
+- Added ToolTips
+- Added GetAttributeNS() and SetAttributeNS() methods to GeckoElement
+- Added Xpcom.ProfileDirectory property to specify where the user profile & cache is stored
 
 Changes in 1.8.1.3
 ------------------

@@ -137,5 +137,20 @@ namespace Skybound.Gecko
 		{
 			get { return this.checkBox.Checked; }
 		}
+
+		protected override void WndProc(ref Message m)
+		{
+			const int WM_NCHITTEST = 0x84;
+			const int HTCLIENT = 0x1;
+			const int HTCAPTION = 0x2;
+			
+			base.WndProc(ref m);
+			
+			if (m.Msg == WM_NCHITTEST)
+			{
+				if (m.Result != (IntPtr)HTCLIENT)
+					m.Result = (IntPtr)HTCAPTION;
+			}
+		}
 	}
 }

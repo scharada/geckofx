@@ -144,6 +144,12 @@ namespace Skybound.Gecko
 			NS_GetComponentManager(out ComponentManager);
 			NS_GetComponentRegistrar(out ComponentRegistrar);
 			
+			// a bug in Mozilla 1.8 (https://bugzilla.mozilla.org/show_bug.cgi?id=309877) causes the PSM to
+			// crash when loading a site over HTTPS.  in order to work around this bug, we must register an nsIDirectoryServiceProvider
+			// which will provide the location of a profile
+			nsIDirectoryService directoryService = GetService<nsIDirectoryService>("@mozilla.org/file/directory_service;1");
+			directoryService.RegisterProvider(new ProfileProvider());
+			
 			_IsInitialized = true;
 		}
 		
@@ -152,6 +158,43 @@ namespace Skybound.Gecko
 		static nsInterfaces ComponentManager;
 		static nsIComponentRegistrar ComponentRegistrar;
 		static nsIServiceManager ServiceManager;
+		
+		/// <summary>
+		/// Gets or sets the path to the directory which contains the user profile.
+		/// </summary>
+		public static string ProfileDirectory
+		{
+			get { return _ProfileDirectory; }
+			set
+			{
+				if (!string.IsNullOrEmpty(value))
+				{
+					if (!Directory.Exists(value))
+					{
+						throw new DirectoryNotFoundException();
+					}
+				}
+				_ProfileDirectory = value;
+			}
+		}
+		static string _ProfileDirectory;
+		
+		/// <summary>
+		/// A simple nsIDirectoryServiceProvider which provides the profile directory.
+		/// </summary>
+		class ProfileProvider : nsIDirectoryServiceProvider
+		{
+			public nsIFile GetFile(string prop, out bool persistent)
+			{
+				persistent = false;
+				
+				if (prop == "ProfD")
+				{
+					return (nsIFile)NewNativeLocalFile(ProfileDirectory ?? "");
+				}
+				return null;
+			}
+		}
 		
 		public static object NewNativeLocalFile(string filename)
 		{
@@ -191,12 +234,37 @@ namespace Skybound.Gecko
 			if (obj == null)
 				return null;
 			
+			// get an nsISupports (aka IUnknown) pointer from the objection
 			IntPtr pUnk = Marshal.GetIUnknownForObject(obj);
 			if (pUnk == IntPtr.Zero)
 				return null;
-						
+			
+			// query interface
 			IntPtr ppv;
 			Marshal.QueryInterface(pUnk, ref iid, out ppv);
+			
+			// if QueryInterface didn't work, try using nsIInterfaceRequestor instead
+			if (ppv == IntPtr.Zero)
+			{
+				// QueryInterface the object for nsIInterfaceRequestor
+				Guid interfaceRequestorIID = typeof(nsIInterfaceRequestor).GUID;
+				IntPtr pInterfaceRequestor;
+				Marshal.QueryInterface(pUnk, ref interfaceRequestorIID, out pInterfaceRequestor);
+				
+				// if we got a pointer to nsIInterfaceRequestor
+				if (pInterfaceRequestor != IntPtr.Zero)
+				{
+					// convert it to a managed interface
+					nsIInterfaceRequestor req = (nsIInterfaceRequestor)Marshal.GetObjectForIUnknown(pInterfaceRequestor);
+					
+					// try to get the requested interface
+					ppv = req.GetInterface(ref iid);
+					
+					// clean up
+					Marshal.ReleaseComObject(req);
+					Marshal.Release(pInterfaceRequestor);
+				}
+			}
 			
 			object result = (ppv != IntPtr.Zero) ? Marshal.GetObjectForIUnknown(ppv) : null;
 			
@@ -231,7 +299,7 @@ namespace Skybound.Gecko
 		/// <param name="className">The name of the class being registered. This value is intended as a human-readable name for the class and need not be globally unique.</param>
 		/// <param name="contractID">The ContractID of the class being registered.</param>
 		/// <param name="factory">The nsIFactory instance of the class being registered.</param>
-		internal static void RegisterFactory(Guid classID, string className, string contractID, nsIFactory factory)
+		public static void RegisterFactory(Guid classID, string className, string contractID, nsIFactory factory)
 		{
 			ComponentRegistrar.RegisterFactory(ref classID, className, contractID, factory);
 		}

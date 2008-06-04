@@ -35,6 +35,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 
 namespace Skybound.Gecko
 {
@@ -118,13 +119,32 @@ namespace Skybound.Gecko
 			
 			public override string Title
 			{
-				get { return Entry.GetTitle(); }
+				get
+				{
+					// for some reason normal marshalling doesn't work for this property, so we have to do it manually
+					IntPtr result;
+					Entry.GetTitle(out result);
+					return Marshal.PtrToStringUni(result);
+				}
 			}
 			
 			public override bool IsSubFrame
 			{
 				get { return Entry.GetIsSubFrame(); }
 			}
+		}
+		
+		/// <summary>
+		/// Navigates the browser to the specified position in its session history.
+		/// </summary>
+		/// <param name="index">The index to navigate to.  This value must a valid index in this collection.</param>
+		/// <returns></returns>
+		public void GotoIndex(int index)
+		{
+			if (index < 0 || index >= Count)
+				throw new ArgumentOutOfRangeException("index");
+			
+			WebNav.GotoIndex(index);
 		}
 		
 		#region IList<GeckoHistoryEntry> Members
@@ -184,7 +204,7 @@ namespace Skybound.Gecko
 
 		public void CopyTo(GeckoHistoryEntry[] array, int arrayIndex)
 		{
-			for (int i = 0; i < arrayIndex; i++)
+			for (int i = 0; i < Count; i++)
 			{
 				array[arrayIndex + i] = this[i];
 			}

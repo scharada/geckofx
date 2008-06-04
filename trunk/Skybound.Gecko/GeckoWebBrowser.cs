@@ -42,6 +42,7 @@ using System.Windows.Forms;
 using System.IO;
 using System.Reflection;
 using System.Diagnostics;
+using System.Text;
 
 namespace Skybound.Gecko
 {
@@ -57,7 +58,8 @@ namespace Skybound.Gecko
 		nsISupportsWeakReference,
 		nsIWeakReference,
 		nsIDOMEventListener,
-		nsISHistoryListener
+		nsISHistoryListener,
+		nsITooltipListener
 	{
 		/// <summary>
 		/// Initializes a new instance of <see cref="GeckoWebBrowser"/>.
@@ -102,13 +104,13 @@ namespace Skybound.Gecko
 		
 		protected override void OnHandleCreated(EventArgs e)
 		{
-			base.OnHandleCreated(e);
-			
 			if (!this.DesignMode)
 			{
 				Xpcom.Initialize();
 				PromptServiceFactory.Register();
-				//WindowCreator.Register();
+				//CertificateDialogsFactory.Register();
+				WindowCreator.Register();
+				//ToolTipTextProviderFactory.Register();
 				
 				WebBrowser = Xpcom.CreateInstance<nsIWebBrowser>("@mozilla.org/embedding/browser/nsWebBrowser;1");
 				WebBrowserFocus = (nsIWebBrowserFocus)WebBrowser;
@@ -117,7 +119,9 @@ namespace Skybound.Gecko
 				
 				WebBrowser.SetContainerWindow(this);
 				
-				((nsIDocShellTreeItem)WebBrowser).SetItemType(nsIDocShellTreeItemConstants.typeContentWrapper);
+				nsIDocShellTreeItem shellTreeItem = Xpcom.QueryInterface<nsIDocShellTreeItem>(WebBrowser);
+				if (shellTreeItem != null)
+					shellTreeItem.SetItemType(nsIDocShellTreeItemConstants.typeContentWrapper);
 				
 				BaseWindow.InitWindow(this.Handle, IntPtr.Zero, 0, 0, this.Width, this.Height);
 				BaseWindow.Create();
@@ -143,9 +147,14 @@ namespace Skybound.Gecko
 				
 				// navigating to about:blank allows drag & drop to work properly before a page has been loaded into the browser
 				Navigate("about:blank");
+				
+				// this fix prevents the browser from crashing if the first page loaded is invalid (missing file, invalid URL, etc)
+				Document.Cookie = "";
 			}
+			
+			base.OnHandleCreated(e);
 		}
-
+		
 		protected override void OnPaint(PaintEventArgs e)
 		{
 			if (this.DesignMode)
@@ -188,7 +197,18 @@ namespace Skybound.Gecko
 				{
 					GeckoCreateWindowEventArgs e = new GeckoCreateWindowEventArgs((GeckoWindowFlags)chromeFlags);
 					browser.OnCreateWindow(e);
-					return e.WebBrowser;
+					
+					if (e.WebBrowser != null)
+					{
+						// set flags
+						((nsIWebBrowserChrome)e.WebBrowser).SetChromeFlags((int)chromeFlags);
+						return e.WebBrowser;
+					}
+					
+					System.Media.SystemSounds.Beep.Play();
+					
+					// prevents crash
+					return new GeckoWebBrowser();
 				}
 				return null;
 			}
@@ -211,20 +231,20 @@ namespace Skybound.Gecko
 		}
 		#endregion
 		
-		#region public event GeckoWindowSetSizeEventHandler WindowSetSize
-		public event GeckoWindowSetSizeEventHandler WindowSetSize
+		#region public event GeckoWindowSetBoundsEventHandler WindowSetBounds
+		public event GeckoWindowSetBoundsEventHandler WindowSetBounds
 		{
-			add { this.Events.AddHandler(WindowSetSizeEvent, value); }
-			remove { this.Events.RemoveHandler(WindowSetSizeEvent, value); }
+			add { this.Events.AddHandler(WindowSetBoundsEvent, value); }
+			remove { this.Events.RemoveHandler(WindowSetBoundsEvent, value); }
 		}
-		private static object WindowSetSizeEvent = new object();
+		private static object WindowSetBoundsEvent = new object();
 
-		/// <summary>Raises the <see cref="WindowSetSize"/> event.</summary>
+		/// <summary>Raises the <see cref="WindowSetBounds"/> event.</summary>
 		/// <param name="e">The data for the event.</param>
-		protected virtual void OnWindowSetSize(GeckoWindowSetSizeEventArgs e)
+		protected virtual void OnWindowSetBounds(GeckoWindowSetBoundsEventArgs e)
 		{
-			if (((GeckoWindowSetSizeEventHandler)this.Events[WindowSetSizeEvent]) != null)
-				((GeckoWindowSetSizeEventHandler)this.Events[WindowSetSizeEvent])(this, e);
+			if (((GeckoWindowSetBoundsEventHandler)this.Events[WindowSetBoundsEvent]) != null)
+				((GeckoWindowSetBoundsEventHandler)this.Events[WindowSetBoundsEvent])(this, e);
 		}
 		#endregion
 		
@@ -255,7 +275,7 @@ namespace Skybound.Gecko
 					
 					if (!IsChild(Handle, GetFocus()))
 					{
-						WebBrowserFocus.Activate();
+						this.Focus();
 					}
 					return;
 				}
@@ -310,8 +330,7 @@ namespace Skybound.Gecko
 		
 		protected override void OnEnter(EventArgs e)
 		{
-			if (!IsBusy)
-				WebBrowserFocus.Activate();
+			WebBrowserFocus.Activate();
 			
 			base.OnEnter(e);
 		}
@@ -341,18 +360,33 @@ namespace Skybound.Gecko
 		/// <param name="url">The url to navigate to.</param>
 		public void Navigate(string url)
 		{
-			Navigate(url, 0);
+			Navigate(url, 0, null, null, null);
 		}
 		
 		/// <summary>
 		/// Navigates to the specified URL using the given load flags.
 		/// </summary>
-		/// <param name="url">The url to navigate to.</param>
+		/// <param name="url">The url to navigate to.  If the url is empty or null, the browser does not navigate and the method returns false.</param>
 		/// <param name="loadFlags">Flags which specify how the page is loaded.</param>
 		public bool Navigate(string url, GeckoLoadFlags loadFlags)
 		{
-			if (url == null)
-				throw new ArgumentNullException("url");
+			return Navigate(url, loadFlags, null, null, null);
+		}
+		
+		/// <summary>
+		/// Navigates to the specified URL using the given load flags, referrer, post data and headers.
+		/// </summary>
+		/// <param name="url">The url to navigate to.  If the url is empty or null, the browser does not navigate and the method returns false.</param>
+		/// <param name="loadFlags">Flags which specify how the page is loaded.</param>
+		/// <param name="referrer">The referring URL, or null.</param>
+		/// <param name="postData">The post data to send, or null.  If you use post data, you must explicity specify a Content-Type and Content-Length
+		/// header in <paramref name="additionalHeaders"/>.</param>
+		/// <param name="additionalHeaders">Any additional HTTP headers to send, or null.  Separate multiple headers with CRLF.  For example,
+		/// "Content-Type: application/x-www-form-urlencoded\r\nContent-Length: 50"</param>
+		public bool Navigate(string url, GeckoLoadFlags loadFlags, string referrer, byte [] postData, string additionalHeaders)
+		{
+			if (string.IsNullOrEmpty(url))
+				return false;
 			
 			if (IsHandleCreated)
 			{
@@ -367,17 +401,116 @@ namespace Skybound.Gecko
 						return false;
 				}
 				
-				if (WebNav.LoadURI(url, (uint)loadFlags, null, IntPtr.Zero, IntPtr.Zero) != 0)
-					return false;
-					// failed
+				nsIInputStream postDataStream = null, headersStream = null;
+				
+				if (postData != null)
+				{
+					// post data must start with CRLF.  actually, you can put additional headers before this, but there's no
+					// point because this method has an "additionalHeaders" argument.  so we might as well insert it automatically
+					Array.Resize(ref postData, postData.Length + 2);
+					Array.Copy(postData, 0, postData, 2, postData.Length - 2);
+					postData[0] = (byte)'\r';
+					postData[1] = (byte)'\n';
+					postDataStream = ByteArrayInputStream.Create(postData);
+				}
+				
+				if (!string.IsNullOrEmpty(additionalHeaders))
+				{
+					// each header must end with a CRLF (including the last one)
+					// here we simply ensure that the last header has a CRLF.  if the header has other syntax problems,
+					// they're the caller's responsibility
+					if (!additionalHeaders.EndsWith("\r\n"))
+						additionalHeaders += "\r\n";
+					
+					headersStream = ByteArrayInputStream.Create(Encoding.UTF8.GetBytes(additionalHeaders));
+				}
+				
+				nsIURI referrerUri = null;
+				if (!string.IsNullOrEmpty(referrer))
+				{
+					referrerUri = Xpcom.GetService<nsIIOService>("@mozilla.org/network/io-service;1").NewURI(new nsACString(referrer), null, null);
+				}
+				
+				return (WebNav.LoadURI(url, (uint)loadFlags, referrerUri, postDataStream, headersStream) != 0);
 			}
 			else
 			{
 				throw new InvalidOperationException("Cannot call Navigate() before the window handle is created.");
 			}
-			
-			return true;
 		}
+		
+		/// <summary>
+		/// Streams a byte array using nsIInputStream.
+		/// </summary>
+		#region class ByteArrayInputStream : nsIInputStream
+		class ByteArrayInputStream : nsIInputStream
+		{
+			private ByteArrayInputStream(byte [] data)
+			{
+				Data = data;
+			}
+			
+			public static ByteArrayInputStream Create(byte [] data)
+			{
+				return (data == null) ? null : new ByteArrayInputStream(data);
+			}
+			
+			byte [] Data;
+			int Position;
+			
+			#region nsIInputStream Members
+			
+			public void Close()
+			{
+				// do nothing
+			}
+			
+			public int Available()
+			{
+				return Data.Length - Position;
+			}
+			
+			public int Read(IntPtr aBuf, uint aCount)
+			{
+				int count = (int)Math.Min(aCount, Available());
+				
+				if (count > 0)
+				{
+					Marshal.Copy(Data, Position, aBuf, count);
+					Position += count;
+				}
+				
+				return count;
+			}
+			
+			public unsafe int ReadSegments(IntPtr aWriter, IntPtr aClosure, uint aCount)
+			{
+				int length = (int)Math.Min(aCount, Available());
+				int writeCount = 0;
+				
+				if (length > 0)
+				{
+				      nsWriteSegmentFun fun = (nsWriteSegmentFun)Marshal.GetDelegateForFunctionPointer(aWriter, typeof(nsWriteSegmentFun));
+				      
+				      fixed (byte * data = &Data[Position])
+				      {
+						int result = fun(this, aClosure, (IntPtr)data, Position, length, out writeCount);
+				      }
+				      
+				      Position += writeCount;
+				}
+				
+				return writeCount;
+			}
+
+			public bool IsNonBlocking()
+			{
+				return true;
+			}
+
+			#endregion
+		}
+		#endregion
 		
 		/// <summary>
 		/// Gets or sets the text displayed in the status bar.
@@ -601,6 +734,249 @@ namespace Skybound.Gecko
 			return true;
 		}
 		
+		nsIClipboardCommands ClipboardCommands
+		{
+			get
+			{
+				if (_ClipboardCommands == null)
+				{
+					_ClipboardCommands = Xpcom.QueryInterface<nsIClipboardCommands>(WebBrowser);
+				}
+				return _ClipboardCommands;
+			}
+		}
+		nsIClipboardCommands _ClipboardCommands;
+		
+		delegate int CanPerformMethod(out bool result);
+		
+		bool CanPerform(CanPerformMethod method)
+		{
+			bool result;
+			if (method(out result) != 0)
+				return false;
+			return result;
+		}
+		
+		/// <summary>
+		/// Gets whether the image contents of the selection may be copied to the clipboard as an image.
+		/// </summary>
+		[Browsable(false)]
+		public bool CanCopyImageContents
+		{
+			get { return CanPerform(ClipboardCommands.CanCopyImageContents); }
+		}
+		
+		/// <summary>
+		/// Copies the image contents of the selection to the clipboard as an image.
+		/// </summary>
+		/// <returns></returns>
+		public bool CopyImageContents()
+		{
+			if (CanCopyImageContents)
+			{
+				ClipboardCommands.CopyImageContents();
+				return true;
+			}
+			return false;
+		}
+		
+		/// <summary>
+		/// Returns true if the <see cref="CopyImageLocation"/> command is enabled.
+		/// </summary>
+		[Browsable(false)]
+		public bool CanCopyImageLocation
+		{
+			get { return CanPerform(ClipboardCommands.CanCopyImageLocation); }
+		}
+		
+		/// <summary>
+		/// Copies the location of the currently selected image to the clipboard.
+		/// </summary>
+		/// <returns></returns>
+		public bool CopyImageLocation()
+		{
+			if (CanCopyImageLocation)
+			{
+				ClipboardCommands.CopyImageLocation();
+				return true;
+			}
+			return false;
+		}
+		
+		/// <summary>
+		/// Returns true if the <see cref="CopyLinkLocation"/> command is enabled.
+		/// </summary>
+		[Browsable(false)]
+		public bool CanCopyLinkLocation
+		{
+			get { return CanPerform(ClipboardCommands.CanCopyLinkLocation); }
+		}
+		
+		/// <summary>
+		/// Copies the location of the currently selected link to the clipboard.
+		/// </summary>
+		/// <returns></returns>
+		public bool CopyLinkLocation()
+		{
+			if (CanCopyLinkLocation)
+			{
+				ClipboardCommands.CopyLinkLocation();
+				return true;
+			}
+			return false;
+		}
+		
+		/// <summary>
+		/// Returns true if the <see cref="CopySelection"/> command is enabled.
+		/// </summary>
+		[Browsable(false)]
+		public bool CanCopySelection
+		{
+			get { return CanPerform(ClipboardCommands.CanCopySelection); }
+		}
+		
+		/// <summary>
+		/// Copies the selection to the clipboard.
+		/// </summary>
+		/// <returns></returns>
+		public bool CopySelection()
+		{
+			if (CanCopySelection)
+			{
+				ClipboardCommands.CopySelection();
+				return true;
+			}
+			return false;
+		}
+		
+		/// <summary>
+		/// Returns true if the <see cref="CutSelection"/> command is enabled.
+		/// </summary>
+		[Browsable(false)]
+		public bool CanCutSelection
+		{
+			get { return CanPerform(ClipboardCommands.CanCutSelection); }
+		}
+		
+		/// <summary>
+		/// Cuts the selection to the clipboard.
+		/// </summary>
+		/// <returns></returns>
+		public bool CutSelection()
+		{
+			if (CanCutSelection)
+			{
+				ClipboardCommands.CutSelection();
+				return true;
+			}
+			return false;
+		}
+		
+		/// <summary>
+		/// Returns true if the <see cref="Paste"/> command is enabled.
+		/// </summary>
+		[Browsable(false)]
+		public bool CanPaste
+		{
+			get { return CanPerform(ClipboardCommands.CanPaste); }
+		}
+		
+		/// <summary>
+		/// Pastes the contents of the clipboard at the current selection.
+		/// </summary>
+		/// <returns></returns>
+		public bool Paste()
+		{
+			if (CanPaste)
+			{
+				ClipboardCommands.Paste();
+				return true;
+			}
+			return false;
+		}
+		
+		/// <summary>
+		/// Selects the entire document.
+		/// </summary>
+		/// <returns></returns>
+		public void SelectAll()
+		{
+			ClipboardCommands.SelectAll();
+		}
+		
+		/// <summary>
+		/// Empties the current selection.
+		/// </summary>
+		/// <returns></returns>
+		public void SelectNone()
+		{
+			ClipboardCommands.SelectNone();
+		}
+		
+		nsICommandManager CommandManager
+		{
+			get { return (_CommandManager == null) ? (_CommandManager = Xpcom.QueryInterface<nsICommandManager>(WebBrowser)) : _CommandManager; }
+		}
+		nsICommandManager _CommandManager;
+		
+		/// <summary>
+		/// Returns true if the undo command is enabled.
+		/// </summary>
+		[Browsable(false)]
+		public bool CanUndo
+		{
+			get { return CommandManager.IsCommandEnabled("cmd_undo", null); }
+		}
+		
+		/// <summary>
+		/// Undoes last executed command.
+		/// </summary>
+		/// <returns></returns>
+		public bool Undo()
+		{
+			if (CanUndo)
+			{
+				CommandManager.DoCommand("cmd_undo", null, null);
+				return true;
+			}
+			return false;
+		}
+		
+		/// <summary>
+		/// Returns true if the redo command is enabled.
+		/// </summary>
+		[Browsable(false)]
+		public bool CanRedo
+		{
+			get { return CommandManager.IsCommandEnabled("cmd_redo", null); }
+		}
+		
+		/// <summary>
+		/// Redoes last undone command.
+		/// </summary>
+		/// <returns></returns>
+		public bool Redo()
+		{
+			if (CanRedo)
+			{
+				CommandManager.DoCommand("cmd_redo", null, null);
+				return true;
+			}
+			return false;
+		}
+		
+		/// <summary>
+		/// Executes the command with the specified name.
+		/// </summary>
+		/// <param name="name">The name of the command to execute.  See http://developer.mozilla.org/en/docs/Editor_Embedding_Guide for a list of available commands.</param>
+		public void ExecuteCommand(string name)
+		{
+			if (string.IsNullOrEmpty(name))
+				throw new ArgumentException("name");
+			
+			CommandManager.DoCommand(name, null, null);
+		}
+		
 		/// <summary>
 		/// Gets the <see cref="Url"/> currently displayed in the web browser.
 		/// Use the <see cref="Navigate(string)"/> method to change the URL.
@@ -677,7 +1053,7 @@ namespace Skybound.Gecko
 				
 				if (_Document == null)
 				{
-					_Document = GeckoDocument.Create((nsIDOMHTMLDocument)WebBrowser.GetContentDOMWindow().GetDocument());
+					_Document = GeckoDocument.Create(Xpcom.QueryInterface<nsIDOMHTMLDocument>(WebBrowser.GetContentDOMWindow().GetDocument()));
 					//FromDOMDocumentTable.Add((nsIDOMDocument)_Document.DomObject, this);
 				}
 				return _Document;
@@ -881,7 +1257,7 @@ namespace Skybound.Gecko
 		
 		void nsIWebBrowserChrome.SizeBrowserTo(int cx, int cy)
 		{
-			OnWindowSetSize(new GeckoWindowSetSizeEventArgs(new Size(cx, cy)));
+			OnWindowSetBounds(new GeckoWindowSetBoundsEventArgs(new Rectangle(0, 0, cx, cy), BoundsSpecified.Size));
 		}
 
 		void nsIWebBrowserChrome.ShowAsModal()
@@ -912,13 +1288,38 @@ namespace Skybound.Gecko
 
 		void nsIContextMenuListener2.OnShowContextMenu(uint aContextFlags, nsIContextMenuInfo info)
 		{
-			MenuItem mnuBack = new MenuItem("Back");
-			mnuBack.Click += delegate { GoBack(); };
-			mnuBack.Enabled = this.CanGoBack;
+			List<MenuItem> optionals = new List<MenuItem>();
 			
-			MenuItem mnuForward = new MenuItem("Forward");
-			mnuForward.Click += delegate { GoForward(); };
-			mnuForward.Enabled = this.CanGoForward;
+			if (this.CanUndo || this.CanRedo)
+			{
+				optionals.Add(new MenuItem("Undo", delegate { Undo(); }));
+				optionals.Add(new MenuItem("Redo", delegate { Redo(); }));
+				
+				optionals[0].Enabled = this.CanUndo;
+				optionals[1].Enabled = this.CanRedo;
+			}
+			else
+			{
+				optionals.Add(new MenuItem("Back", delegate { GoBack(); }));
+				optionals.Add(new MenuItem("Forward", delegate { GoForward(); }));
+				
+				optionals[0].Enabled = this.CanGoBack;
+				optionals[1].Enabled = this.CanGoForward;
+			}
+			
+			optionals.Add(new MenuItem("-"));
+			
+			if (this.CanCopyImageContents)
+				optionals.Add(new MenuItem("Copy Image Contents", delegate { CopyImageContents(); }));
+			
+			if (this.CanCopyImageLocation)
+				optionals.Add(new MenuItem("Copy Image Location", delegate { CopyImageLocation(); }));
+			
+			if (this.CanCopyLinkLocation)
+				optionals.Add(new MenuItem("Copy Link Location", delegate { CopyLinkLocation(); }));
+			
+			if (this.CanCopySelection)
+				optionals.Add(new MenuItem("Copy Selection", delegate { CopySelection(); }));
 			
 			MenuItem mnuSelectAll = new MenuItem("Select All");
 			mnuSelectAll.Click += delegate { SelectAll(); };
@@ -938,30 +1339,13 @@ namespace Skybound.Gecko
 			mnuProperties.Click += delegate { ShowPageProperties(doc); };
 			
 			ContextMenu menu = new ContextMenu();
-			menu.MenuItems.Add(mnuBack);
-			menu.MenuItems.Add(mnuForward);
-			menu.MenuItems.Add("-");
+			menu.MenuItems.AddRange(optionals.ToArray());
 			menu.MenuItems.Add(mnuSelectAll);
 			menu.MenuItems.Add("-");
 			menu.MenuItems.Add(mnuViewSource);
 			menu.MenuItems.Add(mnuProperties);
 			
 			menu.Show(this, PointToClient(MousePosition));
-		}
-		
-		/// <summary>
-		/// Selects the entire document.
-		/// </summary>
-		public void SelectAll()
-		{
-			if (Window == null || Document == null)
-				throw new InvalidOperationException();
-			
-			if (Document.Body == null)
-				return;
-			
-			((nsIDOMWindow2)Window.DomWindow).GetSelection().SelectAllChildren(
-				(nsIDOMNode)Document.Body.DomObject);
 		}
 		
 		/// <summary>
@@ -1013,7 +1397,23 @@ namespace Skybound.Gecko
 
 		IntPtr nsIInterfaceRequestor.GetInterface(ref Guid uuid)
 		{
-			IntPtr ppv, pUnk = Marshal.GetIUnknownForObject(this);
+			object obj = this;
+			
+			// note: when a new window is created, gecko calls GetInterface on the webbrowser to get a DOMWindow in order
+			// to set the starting url
+			if (this.WebBrowser != null)
+			{
+				if (uuid == typeof(nsIDOMWindow).GUID)
+				{
+					obj = this.WebBrowser.GetContentDOMWindow();
+				}
+				else if (uuid == typeof(nsIDOMDocument).GUID)
+				{
+					obj = this.WebBrowser.GetContentDOMWindow().GetDocument();
+				}
+			}
+			
+			IntPtr ppv, pUnk = Marshal.GetIUnknownForObject(obj);
 			
 			Marshal.QueryInterface(pUnk, ref uuid, out ppv);
 			
@@ -1024,19 +1424,34 @@ namespace Skybound.Gecko
 
 		#endregion
 
-		#region nsIEmbeddingSiteWindow2 Members
+		#region nsIEmbeddingSiteWindow Members
 
 		void nsIEmbeddingSiteWindow.SetDimensions(uint flags, int x, int y, int cx, int cy)
 		{
-			throw new NotImplementedException();
+			const int DIM_FLAGS_POSITION = 1;
+			const int DIM_FLAGS_SIZE_INNER = 2;
+			const int DIM_FLAGS_SIZE_OUTER = 4;
+			
+			BoundsSpecified specified = 0;
+			if ((flags & DIM_FLAGS_POSITION) != 0)
+			{
+				specified |= BoundsSpecified.Location;
+			}
+			if ((flags & DIM_FLAGS_SIZE_INNER) != 0 || (flags & DIM_FLAGS_SIZE_OUTER) != 0)
+			{
+				specified |= BoundsSpecified.Size;
+			}
+			
+			OnWindowSetBounds(new GeckoWindowSetBoundsEventArgs(new Rectangle(x, y, cx, cy), specified));
 		}
 
 		void nsIEmbeddingSiteWindow.GetDimensions(uint flags, ref int x, ref int y, ref int cx, ref int cy)
 		{
 			if ((flags & nsIEmbeddingSiteWindowConstants.DIM_FLAGS_POSITION) != 0)
 			{
-				x = Left;
-				y = Top;
+				Point pt = PointToScreen(Point.Empty);
+				x = pt.X;
+				y = pt.Y;
 			}
 
 			if ((flags & nsIEmbeddingSiteWindowConstants.DIM_FLAGS_SIZE_INNER) != 0)
@@ -1054,7 +1469,6 @@ namespace Skybound.Gecko
 		void nsIEmbeddingSiteWindow.SetFocus()
 		{
 			Focus();
-			WebBrowserFocus.Activate();
 			BaseWindow.SetFocus();
 		}
 
@@ -1155,7 +1569,7 @@ namespace Skybound.Gecko
 			
 			if (ppv != IntPtr.Zero)
 			{
-				Marshal.Release(ppv);
+			      Marshal.Release(ppv);
 			}
 			
 			return ppv;
@@ -1194,7 +1608,7 @@ namespace Skybound.Gecko
 				StatusText = "";
 			}
 		}
-
+		
 		void nsIWebProgressListener.OnProgressChange(nsIWebProgress aWebProgress, nsIRequest aRequest, int aCurSelfProgress, int aMaxSelfProgress, int aCurTotalProgress, int aMaxTotalProgress)
 		{
 			int nProgress = aCurTotalProgress;
@@ -1219,14 +1633,9 @@ namespace Skybound.Gecko
 			            return;
 			}
 			
-			Uri uri;
-			using (nsACString str = new nsACString())
-			{
-				aLocation.GetSpec(str);
-				uri = new Uri(str.ToString());
-			}
+			Uri uri = new Uri(nsString.Get(aLocation.GetSpec));
 			
-			OnNavigated(new GeckoNavigatedEventArgs(uri));
+			OnNavigated(new GeckoNavigatedEventArgs(uri, new GeckoResponse(aRequest)));
 			UpdateCommandStatus();
 		}
 
@@ -1597,6 +2006,97 @@ namespace Skybound.Gecko
 		}
 
 		#endregion
+
+		#region nsITooltipListener Members
+
+		void nsITooltipListener.OnShowTooltip(int aXCoords, int aYCoords, string aTipText)
+		{
+			ToolTip = new ToolTipWindow();
+			ToolTip.Location = PointToScreen(new Point(aXCoords, aYCoords)) + new Size(0, 24);
+			ToolTip.Text = aTipText;
+			ToolTip.Show();
+		}
+		
+		ToolTipWindow ToolTip;
+
+		void nsITooltipListener.OnHideTooltip()
+		{
+			if (ToolTip != null)
+			{
+				ToolTip.Close();
+			}
+		}
+		
+		#region class ToolTipWindow : Form
+		/// <summary>
+		/// A window to contain a tool tip.
+		/// </summary>
+		class ToolTipWindow : Form
+		{
+			public ToolTipWindow()
+			{
+				//this.ControlBox = false;
+				this.FormBorderStyle = FormBorderStyle.None;
+				this.ShowInTaskbar = false;
+				this.StartPosition = FormStartPosition.Manual;
+				this.VisibleChanged += delegate { UpdateSize(); };
+				
+				this.BackColor = SystemColors.Info;
+				this.ForeColor = SystemColors.InfoText;
+				this.Font = SystemFonts.DialogFont;
+				
+				label = new Label();
+				label.Location = new Point(5, 5);
+				label.AutoSize = true;
+				label.SizeChanged += delegate { UpdateSize(); };
+				this.Controls.Add(label);
+			}
+			
+			void UpdateSize()
+			{
+				this.Size = label.Size + new Size(10, 10);
+			}
+			
+			Label label;
+
+			public override string Text
+			{
+				get { return (label == null) ? "" : label.Text; }
+				set
+				{
+					if (label != null)
+						label.Text = value;
+				}
+			}
+			
+			protected override bool ShowWithoutActivation
+			{
+				get { return true; }
+			}
+
+			protected override void OnPaint(PaintEventArgs e)
+			{
+				// draw border and background
+				e.Graphics.DrawRectangle(SystemPens.InfoText, 0, 0, Width-1, Height-1);
+				e.Graphics.FillRectangle(SystemBrushes.Info, 1, 1, Width-2, Height-2);
+			}
+			
+			protected override CreateParams CreateParams
+			{
+				get
+				{
+					const int CS_DROPSHADOW = 0x20000;
+					
+					// adds a soft drop shadow (windows xp or later required)
+					CreateParams cp = base.CreateParams;
+					cp.ClassStyle |= CS_DROPSHADOW;
+					return cp;
+				}
+			}
+		}
+		#endregion
+		
+		#endregion
 	}
 	
 	#region public delegate void GeckoHistoryEventHandler(object sender, GeckoHistoryEventArgs e);
@@ -1704,13 +2204,17 @@ namespace Skybound.Gecko
 	{
 		/// <summary>Creates a new instance of a <see cref="GeckoNavigatedEventArgs"/> object.</summary>
 		/// <param name="value"></param>
-		public GeckoNavigatedEventArgs(Uri value)
+		public GeckoNavigatedEventArgs(Uri value, GeckoResponse response)
 		{
 			_Uri = value;
+			_Response = response;
 		}
 
 		public Uri Uri { get { return _Uri; } }
 		Uri _Uri;
+
+		public GeckoResponse Response { get { return _Response; } }
+		GeckoResponse _Response;
 	}
 	#endregion
 	
@@ -1760,21 +2264,26 @@ namespace Skybound.Gecko
 	}
 	#endregion
 	
-	#region public delegate void GeckoWindowSetSizeEventHandler(object sender, GeckoWindowSetSizeEventArgs e);
-	public delegate void GeckoWindowSetSizeEventHandler(object sender, GeckoWindowSetSizeEventArgs e);
+	#region public delegate void GeckoWindowSetBoundsEventHandler(object sender, GeckoWindowSetBoundsEventArgs e);
+	public delegate void GeckoWindowSetBoundsEventHandler(object sender, GeckoWindowSetBoundsEventArgs e);
 
-	/// <summary>Provides data for the <see cref="GeckoWindowSetSizeEventHandler"/> event.</summary>
-	public class GeckoWindowSetSizeEventArgs : System.EventArgs
+	/// <summary>Provides data for the <see cref="GeckoWindowSetBoundsEventHandler"/> event.</summary>
+	public class GeckoWindowSetBoundsEventArgs : System.EventArgs
 	{
-		/// <summary>Creates a new instance of a <see cref="GeckoWindowSetSizeEventArgs"/> object.</summary>
-		/// <param name="windowSize"></param>
-		public GeckoWindowSetSizeEventArgs(Size windowSize)
+		/// <summary>Creates a new instance of a <see cref="GeckoWindowSetBoundsEventArgs"/> object.</summary>
+		/// <param name="bounds"></param>
+		/// <param name="specified"></param>
+		public GeckoWindowSetBoundsEventArgs(Rectangle bounds, BoundsSpecified specified)
 		{
-			_WindowSize = windowSize;
+			_Bounds = bounds;
+			_BoundsSpecified = specified;
 		}
-
-		public Size WindowSize { get { return _WindowSize; } }
-		Size _WindowSize;
+		
+		public Rectangle Bounds { get { return _Bounds; } }
+		Rectangle _Bounds;
+		
+		public BoundsSpecified BoundsSpecified { get { return _BoundsSpecified; } }
+		BoundsSpecified _BoundsSpecified;
 	}
 	#endregion
 	
